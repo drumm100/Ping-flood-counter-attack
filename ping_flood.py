@@ -330,7 +330,7 @@ if __name__ == "__main__":
 
                 if icmp_type == 8 and icmp_code == 0 :
                     print("Echo Request")
-                    addFoundIP(source_address, bytes_to_mac(eth))
+                    addFoundIP(source_address, bytes_to_mac(eth[1]))
 
                     receivePacket(source_address)
 
