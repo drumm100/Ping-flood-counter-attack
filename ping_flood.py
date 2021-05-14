@@ -29,7 +29,7 @@ def addFoundIP(ip: str, mac: str = '') -> bool:
             'MAC': mac,
         })
 
-        print('MAC:', mac_addr)
+        print('MAC:', bytes_to_mac(eth[1]))
         print('IP:', source_address)
         return True
     return False
@@ -339,7 +339,7 @@ if __name__ == "__main__":
                     if isPingFloodAttack(source_address, pInterval):
                         printInfo()
                         executeCounterAttack(source_address, ATTACK_TIME)
-                
+
 
                 #if icmp_type == 0 and icmp_code == 0 :
                     #print("Echo Reply")
